@@ -1,0 +1,68 @@
+# Trustworthiness runner config for ResNet50 + lung-region attention.
+#
+# Source of settings:
+# - model.name follows the repo's baseline.yaml default ResNet50 baseline.
+# - training hyperparameters use the shared baseline defaults where no
+#   committed ResNet50 tuned selected_config exists in artifacts/configs.
+# - two-phase fields are required by src/modules/training.py; phase1/phase2
+#   split follows the project transfer-learning protocol used by the other
+#   lung-attention configs, but these values should be replaced if a reviewed
+#   ResNet50 HPO artifact is added later.
+#
+# This file intentionally does NOT copy EfficientNet-B0 hyperparameters.
+
+experiment:
+  name: T_trustworthiness_resnet50_lung_attention
+  seed: 42
+
+model:
+  name: resnet50
+  pretrained: true
+  num_classes: 4
+  drop_rate: 0.0
+
+module:
+  name: lung_region_attention
+  attention: lung
+  use_attention: true
+  in_channels: 2048
+  reduction: 16
+  gate_mode: residual
+  target_mode: soft
+  lambda_att: 1.0
+  lambda_bg: 0.0
+
+dataset:
+  name: covid19_radiography
+  version: v1
+  image_size: 224
+  split_version: v1
+  use_masks: true
+
+training:
+  phase1_epochs: 15
+  phase1_lr: 0.0001
+  phase2_epochs: 40
+  phase2_lr: 0.00001
+  unfreeze_blocks: 1
+  batch_size: 32
+  optimizer: adamw
+  weight_decay: 0.0001
+  patience: 5
+
+scheduler:
+  name: none
+
+augmentation:
+  version: joint_v1
+
+tracking:
+  provider: wandb
+  project: chest-xray-disease-classification
+  entity: null
+  mode: disabled
+
+checkpoint:
+  monitor: val_loss
+  mode: min
+  dir: artifacts/trustworthiness/resnet50/runs

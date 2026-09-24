@@ -7,6 +7,7 @@ functions here support the cross-backbone baseline-vs-lung-guided comparison.
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -14,6 +15,64 @@ import pandas as pd
 
 
 CNN_BACKBONES = {"densenet121", "resnet50", "efficientnet_b0"}
+
+BACKBONE_CONFIGS = {
+    "densenet121": "configs/densenet121_lung_attention.yaml",
+    "resnet50": "configs/resnet50_lung_attention.yaml",
+    "efficientnet_b0": "configs/efficientnet_b0_lung_attention.yaml",
+}
+
+
+def default_config_path(repo_root: Path, backbone: str) -> Path:
+    if backbone not in BACKBONE_CONFIGS:
+        raise ValueError(f"No default config registered for backbone '{backbone}'")
+    return repo_root / BACKBONE_CONFIGS[backbone]
+
+
+def validate_backbone_config(config: Dict[str, Any], backbone: str, config_path: Path | str = "<config>") -> None:
+    cfg_backbone = config.get("model", {}).get("name")
+    if cfg_backbone != backbone:
+        raise ValueError(
+            f"Config/backbone mismatch: {config_path} has model.name={cfg_backbone!r}, "
+            f"but --backbone is {backbone!r}."
+        )
+
+
+def seed_output_dir(base_output_dir: Path, backbone: str, seed: int) -> Path:
+    return base_output_dir / backbone / f"seed{seed}"
+
+
+def load_guided_config(path: Path | str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    required = {"guided_mode", "lambda_att", "lambda_bg"}
+    missing = required - set(data)
+    if missing:
+        raise ValueError(f"guided config missing keys: {sorted(missing)}")
+    return data
+
+
+def resolve_guided_hparams(
+    guided_config: Optional[Dict[str, Any]],
+    guided_mode: Optional[str],
+    lambda_att: Optional[float],
+    lambda_bg: Optional[float],
+    defaults: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """CLI override > selected config > defaults."""
+    defaults = defaults or {"guided_mode": "multiply", "lambda_att": 1.0, "lambda_bg": 0.0}
+    source = {**defaults, **(guided_config or {})}
+    if guided_mode is not None:
+        source["guided_mode"] = guided_mode
+    if lambda_att is not None:
+        source["lambda_att"] = lambda_att
+    if lambda_bg is not None:
+        source["lambda_bg"] = lambda_bg
+    return {
+        "guided_mode": source["guided_mode"],
+        "lambda_att": float(source["lambda_att"]),
+        "lambda_bg": float(source["lambda_bg"]),
+    }
 
 
 def make_pair_configs(
@@ -86,6 +145,7 @@ def validation_selection_row(
             mode = cf["mode"]
             row[f"val_cf_{mode}_stability"] = cf.get("mean_stability")
             row[f"val_cf_{mode}_flip_rate"] = cf.get("pred_flip_rate")
+            row[f"val_cf_{mode}_confidence_change"] = cf.get("mean_abs_confidence_change")
     return row
 
 
@@ -161,3 +221,77 @@ def write_master_comparison(rows: Iterable[Dict[str, Any]], output_csv) -> pd.Da
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_csv, index=False)
     return df
+
+
+def upsert_master_comparison(rows: Iterable[Dict[str, Any]], output_csv) -> pd.DataFrame:
+    output_csv = Path(output_csv)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    new_df = pd.DataFrame(list(rows))
+    key = ["backbone", "version", "seed"]
+    if output_csv.exists():
+        old_df = pd.read_csv(output_csv)
+        combined = pd.concat([old_df, new_df], ignore_index=True)
+    else:
+        combined = new_df
+    combined = combined.drop_duplicates(subset=key, keep="last")
+    combined = combined.sort_values(key).reset_index(drop=True)
+    combined.to_csv(output_csv, index=False)
+    return combined
+
+
+def summarize_multiseed_master(master_csv, output_csv) -> pd.DataFrame:
+    df = pd.read_csv(master_csv)
+    metrics = [
+        "test_accuracy", "test_macro_f1", "test_macro_auc", "eil_post",
+        "cf_zero_stability", "cf_zero_flip_rate",
+        "cf_shuffle_stability", "cf_shuffle_flip_rate",
+        "cf_noise_stability", "cf_noise_flip_rate",
+        "ece_before", "ece_after", "brier_before", "brier_after",
+        "params", "gflops", "cpu_latency_ms", "gpu_latency_ms",
+        "external_accuracy", "external_auc", "ood_drop",
+    ]
+    rows = []
+    for (backbone, version), group in df.groupby(["backbone", "version"], dropna=False):
+        row = {"backbone": backbone, "version": version, "n_seeds": int(group["seed"].nunique())}
+        for metric in metrics:
+            if metric in group:
+                row[f"{metric}_mean"] = group[metric].mean(skipna=True)
+                row[f"{metric}_std"] = group[metric].std(skipna=True)
+        rows.append(row)
+    out = pd.DataFrame(rows)
+    output_csv = Path(output_csv)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(output_csv, index=False)
+    return out
+
+
+def select_guided_candidate(selection_df: pd.DataFrame, output_json=None) -> Dict[str, Any]:
+    """Conservative validation-only selection.
+
+    Returns no clear winner unless at least one candidate has non-degraded
+    macro-F1 and improves zero-background stability relative to the table's
+    median candidate. This avoids forcing a winner from noisy validation data.
+    """
+    if selection_df.empty:
+        result = {"selected": False, "reason": "no candidates", "selection_rule_version": "v1"}
+    else:
+        df = selection_df.copy()
+        f1_floor = df["val_macro_f1"].max() - 0.01
+        stability_col = "val_cf_zero_stability"
+        if stability_col in df:
+            robust_floor = df[stability_col].median(skipna=True)
+            candidates = df[(df["val_macro_f1"] >= f1_floor) & (df[stability_col] >= robust_floor)]
+        else:
+            candidates = df[df["val_macro_f1"] >= f1_floor]
+        if candidates.empty:
+            result = {"selected": False, "reason": "no clear winner", "selection_rule_version": "v1"}
+        else:
+            sort_cols = [c for c in [stability_col, "val_attention_dice", "val_macro_f1"] if c in candidates]
+            best = candidates.sort_values(sort_cols, ascending=False).iloc[0].to_dict()
+            result = {"selected": True, "selection_rule_version": "v1", **best}
+    if output_json is not None:
+        output_json = Path(output_json)
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_json, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+    return result

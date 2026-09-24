@@ -33,7 +33,9 @@ This project delivers a rigorous, reproducible comparison of four transfer-learn
 | 🛡️ **Robustness (OOD)** | Does it generalise to an unseen external dataset? |
 | ⚡ **Efficiency** | Is it deployable (params, FLOPs, latency, memory)? |
 
-> We do not propose a new architecture. **The contribution is the synthesis** — a unified benchmark across all five axes, using explainability as an *audit tool* to expose shortcut learning on the popular COVID-19 Radiography dataset.
+> The primary contribution is a unified trustworthiness benchmark, together
+> with an experimental study of whether training-time anatomical guidance can
+> reduce shortcut reliance across model architectures.
 
 This repository now frames the main scientific comparison as **vanilla baseline
 vs. anatomically/lung-guided training** for each supported architecture. We
@@ -65,10 +67,10 @@ Our literature review (2023–2026) found that:
 ## ✨ Key Contributions
 
 1. A **unified, open-source benchmark** comparing three CNNs and a Vision Transformer under identical preprocessing and training on chest X-rays.
-2. The first **five-axis trustworthiness comparison** of these architectures (accuracy, calibration, explanation faithfulness, efficiency, cross-dataset robustness) together.
-3. Use of explainability (**Grad-CAM / attention rollout / SHAP**) as a **quantitative audit for shortcut learning**, via a lung-localisation faithfulness score.
-4. Evidence on whether **ViT's global attention** helps or hurts out-of-distribution robustness vs CNNs.
-5. **Practical, reproducible deployment recommendations** depending on whether the priority is accuracy, trust, or compute budget.
+2. A controlled **baseline-vs-anatomically-guided** study for CNN backbones, with method selection performed on validation data only.
+3. Joint evaluation of classification, calibration, explanation faithfulness, background counterfactual robustness, efficiency, and external-domain generalization where a valid mapping exists.
+4. Use of explainability (**Grad-CAM / attention rollout / SHAP**) as an audit tool, not as sole proof of reduced shortcut reliance.
+5. Practical, reproducible reporting that leaves metrics pending when experiments or external mappings are not yet implemented.
 
 ---
 
@@ -116,22 +118,19 @@ model = timm.create_model("vit_base_patch16_224", pretrained=True, num_classes=4
 
 ```mermaid
 flowchart TD
-    A[Chest X-ray datasets<br/>primary + external] --> B[Image cleaning & quality filtering]
-    B --> C[Resize · normalise · optional lung segmentation]
-    C --> D[Data augmentation · stratified 70/15/15 split]
-    D --> E{Train 4 models under ONE identical protocol}
-    E --> M1[ResNet50]
-    E --> M2[DenseNet121]
-    E --> M3[EfficientNet-B0]
-    E --> M4[ViT-Base]
-    M1 & M2 & M3 & M4 --> F[Performance evaluation<br/>accuracy · F1 · AUROC]
-    F --> G[Calibration analysis<br/>ECE · temperature scaling]
-    G --> H[Explainability audit<br/>Grad-CAM · Attention Rollout · SHAP · faithfulness]
-    H --> I[External robustness test<br/>out-of-distribution]
-    I --> J[Efficiency benchmark<br/>+ Pareto trade-off]
-    J --> K[Comparative study → paper]
+    A[Primary CXR dataset] --> B[Fixed train / validation / test split]
+    B --> C[Method development on validation only<br/>A0-A5 and lambda sweeps]
+    C --> D[Freeze selected guided configuration]
+    D --> E{For each backbone}
+    E --> F[Baseline vs guided]
+    F --> G[Classification<br/>accuracy / macro-F1 / AUROC]
+    G --> H[Explainability / EIL<br/>Grad-CAM and attention metrics]
+    H --> I[Counterfactual background robustness<br/>zero / shuffle / noise]
+    I --> J[Calibration<br/>ECE / Brier / temperature scaling]
+    J --> K[External OOD evaluation<br/>explicit mapping required]
+    K --> L[Efficiency<br/>params / FLOPs / latency]
+    L --> M[Multi-seed + cross-backbone analysis]
 ```
-
 **Transfer-learning strategy (identical for every model):** Phase 1 — freeze backbone, train head. Phase 2 — unfreeze final blocks, fine-tune. Shared optimiser (AdamW), schedule, seed and augmentation, so any difference is attributable to the *architecture*, not tuning luck.
 
 **Golden rule:** Freeze one identical preprocessing + training pipeline early and use it for every model. **Fair comparison is the entire point of the study.**
