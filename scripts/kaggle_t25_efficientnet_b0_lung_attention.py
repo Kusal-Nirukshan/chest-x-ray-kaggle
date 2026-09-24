@@ -1,16 +1,25 @@
 """Kaggle runner for T25: EfficientNet-B0 + Lung-Region Attention A0-A5.
 
-Typical Kaggle usage from a notebook cell:
+Typical Kaggle setup and usage from notebook cells:
 
-    !python /kaggle/working/chest-x-ray/scripts/kaggle_t25_efficientnet_b0_lung_attention.py \
-      --repo-root /kaggle/working/chest-x-ray \
+    %cd /kaggle/working
+    !git clone https://github.com/Kusal-Nirukshan/chest-x-ray-kaggle.git
+    %cd chest-x-ray-kaggle
+    !pip install -q timm grad-cam wandb PyYAML scikit-learn pandas matplotlib seaborn
+
+    !python scripts/kaggle_t25_efficientnet_b0_lung_attention.py \
+      --repo-root /kaggle/working/chest-x-ray-kaggle \
       --data-dir "/kaggle/input/covid19-radiography-database/COVID-19_Radiography_Dataset" \
       --arms A0_vanilla A1_gate_only A4_guidance_only A2_full A3_multiply A5_cbam \
       --cam-subset-size 1000
 
 For a quick smoke test:
 
-    !python .../kaggle_t25_efficientnet_b0_lung_attention.py --quick --arms A0_vanilla A2_full
+    !python scripts/kaggle_t25_efficientnet_b0_lung_attention.py \
+      --repo-root /kaggle/working/chest-x-ray-kaggle \
+      --data-dir "/kaggle/input/covid19-radiography-database/COVID-19_Radiography_Dataset" \
+      --quick \
+      --arms A0_vanilla A2_full
 
 Outputs are written under:
     artifacts/T25_efficientnet_b0_lung_attention/

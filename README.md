@@ -35,6 +35,19 @@ This project delivers a rigorous, reproducible comparison of four transfer-learn
 
 > We do not propose a new architecture. **The contribution is the synthesis** — a unified benchmark across all five axes, using explainability as an *audit tool* to expose shortcut learning on the popular COVID-19 Radiography dataset.
 
+This repository now frames the main scientific comparison as **vanilla baseline
+vs. anatomically/lung-guided training** for each supported architecture. We
+investigate whether anatomically guided training reduces reliance on non-lung
+shortcut features, improves robustness and cross-domain generalization, and
+maintains or improves predictive performance. The existing A0-A5 attention
+arms remain method-development ablations used to decide which lung-guided
+mechanism should be carried into the cross-backbone trustworthiness comparison;
+they are not, by themselves, the final cross-backbone result.
+
+We do not claim that shortcut reliance has been reduced until the evidence
+supports it across background counterfactuals, explanation localization, and
+external/OOD evaluation.
+
 ---
 
 ## 🧭 Motivation & Research Gap
@@ -179,6 +192,90 @@ Every training run — regardless of who trains it or which model — follows th
 | **W&B setup guide** | [`docs/wandb_setup.md`](docs/wandb_setup.md) |
 
 GitHub stores the code, config, and policy needed to reproduce a run; W&B stores that run's metrics and history. Start from [`notebooks/kaggle_training_template.ipynb`](notebooks/kaggle_training_template.ipynb) or [`notebooks/colab_training_template.ipynb`](notebooks/colab_training_template.ipynb) and the shared utilities in [`src/utils/`](src/utils/).
+
+---
+
+## T25 EfficientNet-B0 Lung Attention on Kaggle
+
+The Kaggle-ready T25 runner lives at [`scripts/kaggle_t25_efficientnet_b0_lung_attention.py`](scripts/kaggle_t25_efficientnet_b0_lung_attention.py), with config in [`configs/efficientnet_b0_lung_attention.yaml`](configs/efficientnet_b0_lung_attention.yaml).
+
+Clone the repo into Kaggle's writable working directory, not `/kaggle/input`:
+
+```bash
+cd /kaggle/working
+git clone https://github.com/Kusal-Nirukshan/chest-x-ray-kaggle.git
+cd chest-x-ray-kaggle
+pip install -q timm grad-cam wandb PyYAML scikit-learn pandas matplotlib seaborn
+```
+
+Quick smoke test:
+
+```bash
+python scripts/kaggle_t25_efficientnet_b0_lung_attention.py \
+  --repo-root /kaggle/working/chest-x-ray-kaggle \
+  --data-dir "/kaggle/input/covid19-radiography-database/COVID-19_Radiography_Dataset" \
+  --quick \
+  --arms A0_vanilla A2_full
+```
+
+Full six-arm run:
+
+```bash
+python scripts/kaggle_t25_efficientnet_b0_lung_attention.py \
+  --repo-root /kaggle/working/chest-x-ray-kaggle \
+  --data-dir "/kaggle/input/covid19-radiography-database/COVID-19_Radiography_Dataset" \
+  --arms A0_vanilla A1_gate_only A4_guidance_only A2_full A3_multiply A5_cbam \
+  --cam-subset-size 1000
+```
+
+Outputs are written to `/kaggle/working/chest-x-ray-kaggle/artifacts/T25_efficientnet_b0_lung_attention/` and zipped for download as a Kaggle output. `/kaggle/input` should remain read-only dataset storage.
+
+---
+
+## Trustworthiness Pair Runner
+
+The final comparison runner trains exactly two models for one CNN backbone:
+
+- `baseline`: no lung attention and no mask-guidance loss
+- `guided`: selected lung-guided mechanism with the same backbone, head,
+  preprocessing, split, seed, and training schedule
+
+```bash
+python scripts/kaggle_trustworthiness_pair.py \
+  --repo-root /kaggle/working/chest-x-ray-kaggle \
+  --data-dir "/kaggle/input/covid19-radiography-database/COVID-19_Radiography_Dataset" \
+  --backbone efficientnet_b0 \
+  --guided-mode multiply \
+  --lambda-att 1.0 \
+  --lambda-bg 0.0
+```
+
+The runner evaluates classification, Grad-CAM EIL, attention metrics where
+available, background counterfactual robustness (`zero`, `shuffle`, `noise`),
+validation-fitted temperature calibration, and efficiency. Results are written
+under `artifacts/trustworthiness/<backbone>/`, including
+`master_comparison.csv`, `counterfactual_summary.csv`,
+`counterfactual_per_image.csv`, calibration JSON/plots, and per-image
+prediction/EIL CSVs.
+
+Research pipeline:
+
+```text
+Primary dataset
+  -> fixed train/validation/test split
+  -> baseline model vs lung-guided model
+  -> classification: accuracy / macro-F1 / AUROC
+  -> explainability: Grad-CAM / EIL
+  -> causal shortcut probe: background zero / shuffle / noise
+  -> calibration: ECE / Brier / temperature scaling
+  -> external/OOD evaluation
+  -> efficiency
+  -> cross-backbone comparison
+```
+
+ViT is intentionally not passed through the CNN Conv2D attention gate. It needs
+a patch-token lung-guidance adapter that separates any CLS token, maps the lung
+mask to the patch grid, and preserves the ViT classifier flow.
 
 ---
 

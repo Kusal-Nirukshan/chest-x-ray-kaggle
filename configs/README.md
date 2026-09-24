@@ -5,6 +5,11 @@ hardcoded values scattered through notebooks or scripts.
 
 ## Files
 
+- `efficientnet_b0_lung_attention.yaml` - T25 EfficientNet-B0 lung-region
+  attention ablation config. It uses `reduction=16` for the EfficientNet cost
+  target; override `module.lambda_att` per sweep point instead of editing the
+  baseline config.
+
 - `baseline.yaml` — the reference configuration. Treat it as read-only; don't
   edit it to run a one-off experiment.
 

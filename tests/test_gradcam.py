@@ -7,6 +7,7 @@ and avoid a network weight download in CI.
 from __future__ import annotations
 
 import torch
+import torch.nn as nn
 
 from src.modules import build_model, energy_inside_lung
 from src.modules.gradcam import cam_for, get_taps
@@ -18,6 +19,38 @@ def _rect_mask(batch: int = 2) -> torch.Tensor:
     m = torch.zeros(batch, 1, 224, 224)
     m[:, :, RECT[0], RECT[1]] = 1.0
     return m
+
+
+class _DummyFeatures(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.norm5 = nn.Identity()
+
+
+class _DummyBackbone(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.features = _DummyFeatures()
+        self.bn2 = nn.Identity()
+        self.layer4 = nn.Sequential(nn.Identity(), nn.Identity())
+
+
+class _DummyLungAttentionModel(nn.Module):
+    def __init__(self, backbone_name: str):
+        super().__init__()
+        self.backbone_name = backbone_name
+        self.backbone = _DummyBackbone()
+        self.post_attn = nn.Identity()
+
+
+def test_get_taps_selects_architecture_specific_pre_gate_layer():
+    dense = _DummyLungAttentionModel("densenet121")
+    eff = _DummyLungAttentionModel("efficientnet_b0")
+    res = _DummyLungAttentionModel("resnet50")
+
+    assert get_taps(dense) == (dense.post_attn, dense.backbone.features.norm5)
+    assert get_taps(eff) == (eff.post_attn, eff.backbone.bn2)
+    assert get_taps(res) == (res.post_attn, res.backbone.layer4[-1])
 
 
 def test_cam_for_output_contract():

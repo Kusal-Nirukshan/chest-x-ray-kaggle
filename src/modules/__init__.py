@@ -52,6 +52,14 @@ from .lung_attention import (
     unfreeze_final_blocks,
 )
 from .training import best_history_row, build_optimizer, build_scheduler, evaluate, run_epoch, run_full_arm, train_phase
+from .trustworthiness import (
+    CNN_BACKBONES,
+    build_master_row,
+    make_pair_configs,
+    validation_selection_row,
+    write_master_comparison,
+    write_validation_selection_table,
+)
 
 __all__ = [
     "LungRegionAttention",
@@ -100,4 +108,10 @@ __all__ = [
     "fit_temperature",
     "plot_reliability_diagram",
     "calibration_report",
+    "CNN_BACKBONES",
+    "make_pair_configs",
+    "validation_selection_row",
+    "write_validation_selection_table",
+    "build_master_row",
+    "write_master_comparison",
 ]
