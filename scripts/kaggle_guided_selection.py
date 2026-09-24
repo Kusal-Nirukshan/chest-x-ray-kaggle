@@ -108,15 +108,15 @@ def main() -> None:
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_loader, val_loader, _test_loader, class_names, train_targets, datasets = build_dataloaders(
+    manifest_path = args.repo_root / "artifacts" / "splits" / "split_manifest_v1.csv"
+    _train_loader, _val_loader, _test_loader, class_names, _train_targets, datasets = build_dataloaders(
         data_dir=args.data_dir,
         img_size=cfg["dataset"]["image_size"],
         batch_size=cfg["training"]["batch_size"],
         seed=args.seed,
         num_workers=args.num_workers,
-        split_manifest_path=args.repo_root / "artifacts" / "splits" / "split_manifest_v1.csv",
+        split_manifest_path=manifest_path,
     )
-    criterion = nn.CrossEntropyLoss(weight=compute_class_weights(train_targets, len(class_names)).to(device))
     val_cam_subset = stratified_cam_subset(datasets["val"], n=args.val_cam_subset_size, seed=args.seed)
     with (output_dir / "validation_cam_subset_indices.json").open("w", encoding="utf-8") as f:
         json.dump([int(x) for x in val_cam_subset], f, indent=2)
@@ -142,6 +142,15 @@ def main() -> None:
         print("=" * 80)
 
         set_seed(args.seed)
+        train_loader, val_loader, _test_loader, class_names, train_targets, datasets = build_dataloaders(
+            data_dir=args.data_dir,
+            img_size=cfg["dataset"]["image_size"],
+            batch_size=cfg["training"]["batch_size"],
+            seed=args.seed,
+            num_workers=args.num_workers,
+            split_manifest_path=manifest_path,
+        )
+        criterion = nn.CrossEntropyLoss(weight=compute_class_weights(train_targets, len(class_names)).to(device))
         model = build_model(
             num_classes=arm_cfg["model"]["num_classes"],
             use_attention=m["use_attention"],
