@@ -31,7 +31,29 @@ def test_build_statistics_report_from_per_image_predictions(tmp_path):
     g_path = tmp_path / "guided.csv"
     baseline.to_csv(b_path, index=False)
     guided.to_csv(g_path, index=False)
-    report = build_statistics_report(b_path, g_path, tmp_path / "statistics.json")
+    baseline_cf = pd.DataFrame({
+        "image_path": ["a.png", "b.png"],
+        "mode": ["zero", "zero"],
+        "stability": [0.8, 0.7],
+        "prediction_flipped": [False, True],
+    })
+    guided_cf = pd.DataFrame({
+        "image_path": ["a.png", "b.png"],
+        "mode": ["zero", "zero"],
+        "stability": [0.9, 0.85],
+        "prediction_flipped": [False, False],
+    })
+    b_cf_path = tmp_path / "baseline_cf.csv"
+    g_cf_path = tmp_path / "guided_cf.csv"
+    baseline_cf.to_csv(b_cf_path, index=False)
+    guided_cf.to_csv(g_cf_path, index=False)
+    report = build_statistics_report(
+        b_path, g_path, tmp_path / "statistics.json",
+        baseline_counterfactual_csv=b_cf_path,
+        guided_counterfactual_csv=g_cf_path,
+    )
     assert "classification_mcnemar" in report
     assert "eil_post_wilcoxon" in report
+    assert "cf_zero_stability_wilcoxon" in report
+    assert "cf_zero_flip_paired_counts" in report
     assert (tmp_path / "statistics.json").exists()

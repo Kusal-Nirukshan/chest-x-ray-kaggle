@@ -165,10 +165,29 @@ def test_guided_config_precedence_cli_overrides_config():
     assert resolved == {"guided_mode": "multiply", "lambda_att": 0.3, "lambda_bg": 0.5}
 
 
+def test_select_guided_candidate_requires_baseline_reference(tmp_path):
+    df = pd.DataFrame([
+        {"version": "guided", "guided_mode": "residual", "lambda_att": 0.3, "lambda_bg": 0.0, "val_macro_f1": 0.8, "val_cf_zero_stability": 0.7},
+    ])
+    result = select_guided_candidate(df, tmp_path / "selected.json")
+    assert result["selected"] is False
+    assert result["reason"] == "missing validation baseline"
+
+
+def test_select_guided_candidate_uses_baseline_not_best_guided(tmp_path):
+    df = pd.DataFrame([
+        {"version": "baseline", "candidate": "baseline", "val_macro_f1": 0.92, "val_cf_zero_stability": 0.80},
+        {"version": "guided", "guided_mode": "residual", "lambda_att": 0.3, "lambda_bg": 0.0, "val_macro_f1": 0.86, "val_cf_zero_stability": 0.90},
+        {"version": "guided", "guided_mode": "multiply", "lambda_att": 1.0, "lambda_bg": 0.1, "val_macro_f1": 0.87, "val_cf_zero_stability": 0.91},
+    ])
+    result = select_guided_candidate(df, tmp_path / "selected.json")
+    assert result["selected"] is False
+
+
 def test_select_guided_candidate_outputs_no_test_metrics(tmp_path):
     df = pd.DataFrame([
-        {"guided_mode": "residual", "lambda_att": 0.3, "lambda_bg": 0.0, "val_macro_f1": 0.8, "val_cf_zero_stability": 0.7},
-        {"guided_mode": "multiply", "lambda_att": 1.0, "lambda_bg": 0.1, "val_macro_f1": 0.805, "val_cf_zero_stability": 0.8},
+        {"version": "baseline", "candidate": "baseline", "val_macro_f1": 0.80, "val_cf_zero_stability": 0.70},
+        {"version": "guided", "guided_mode": "multiply", "lambda_att": 1.0, "lambda_bg": 0.1, "val_macro_f1": 0.805, "val_cf_zero_stability": 0.80, "val_eil_post": 0.75},
     ])
     result = select_guided_candidate(df, tmp_path / "selected.json")
     assert result["selected"] is True

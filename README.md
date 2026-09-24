@@ -131,7 +131,7 @@ flowchart TD
     K --> L[Efficiency<br/>params / FLOPs / latency]
     L --> M[Multi-seed + cross-backbone analysis]
 ```
-**Transfer-learning strategy (identical for every model):** Phase 1 — freeze backbone, train head. Phase 2 — unfreeze final blocks, fine-tune. Shared optimiser (AdamW), schedule, seed and augmentation, so any difference is attributable to the *architecture*, not tuning luck.
+**Transfer-learning strategy:** Each backbone uses its established architecture-specific training configuration. Within a backbone, the baseline and guided versions share the same preprocessing, fixed split, classifier setup, seed, and training hyperparameters, so the intended difference is the lung-guided mechanism.
 
 **Golden rule:** Freeze one identical preprocessing + training pipeline early and use it for every model. **Fair comparison is the entire point of the study.**
 

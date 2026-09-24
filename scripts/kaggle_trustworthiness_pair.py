@@ -110,6 +110,7 @@ def main() -> None:
     from src.modules import (
         LogitsOnly,
         build_master_row,
+        build_statistics_report,
         build_per_image_predictions,
         calibration_report,
         default_config_path,
@@ -309,6 +310,16 @@ def main() -> None:
             args.repo_root / "artifacts" / "trustworthiness" / "multiseed_summary.csv",
         )
         write_validation_selection_table(validation_rows, output_dir / "validation_selection.csv")
+        if (output_dir / "baseline" / "per_image_predictions.csv").exists() and (
+            output_dir / "guided" / "per_image_predictions.csv"
+        ).exists():
+            build_statistics_report(
+                output_dir / "baseline" / "per_image_predictions.csv",
+                output_dir / "guided" / "per_image_predictions.csv",
+                output_dir / "statistics.json",
+                baseline_counterfactual_csv=output_dir / "baseline" / "counterfactual_per_image.csv",
+                guided_counterfactual_csv=output_dir / "guided" / "counterfactual_per_image.csv",
+            )
 
         print("\nTrustworthiness comparison:")
         print(master.to_string(index=False))

@@ -46,7 +46,39 @@ def paired_wilcoxon(x, y, metric: str) -> Dict[str, Any]:
     return result
 
 
-def build_statistics_report(baseline_per_image_csv, guided_per_image_csv, output_json) -> Dict[str, Any]:
+def _add_counterfactual_statistics(report: Dict[str, Any], baseline_cf_csv, guided_cf_csv) -> None:
+    if baseline_cf_csv is None or guided_cf_csv is None:
+        return
+    if not Path(baseline_cf_csv).exists() or not Path(guided_cf_csv).exists():
+        return
+    baseline = pd.read_csv(baseline_cf_csv)
+    guided = pd.read_csv(guided_cf_csv)
+    merged = baseline.merge(guided, on=["image_path", "mode"], suffixes=("_baseline", "_guided"))
+    for mode in sorted(merged["mode"].dropna().unique()):
+        mode_df = merged[merged["mode"] == mode]
+        if {"stability_baseline", "stability_guided"}.issubset(mode_df.columns):
+            clean = mode_df[["stability_baseline", "stability_guided"]].dropna()
+            report[f"cf_{mode}_stability_wilcoxon"] = paired_wilcoxon(
+                clean["stability_baseline"], clean["stability_guided"], f"cf_{mode}_stability"
+            )
+        if {"prediction_flipped_baseline", "prediction_flipped_guided"}.issubset(mode_df.columns):
+            b_flip = mode_df["prediction_flipped_baseline"].astype(bool)
+            g_flip = mode_df["prediction_flipped_guided"].astype(bool)
+            report[f"cf_{mode}_flip_paired_counts"] = {
+                "baseline_flip_guided_not": int((b_flip & ~g_flip).sum()),
+                "guided_flip_baseline_not": int((~b_flip & g_flip).sum()),
+                "both_flip": int((b_flip & g_flip).sum()),
+                "neither_flip": int((~b_flip & ~g_flip).sum()),
+            }
+
+
+def build_statistics_report(
+    baseline_per_image_csv,
+    guided_per_image_csv,
+    output_json,
+    baseline_counterfactual_csv=None,
+    guided_counterfactual_csv=None,
+) -> Dict[str, Any]:
     baseline = pd.read_csv(baseline_per_image_csv)
     guided = pd.read_csv(guided_per_image_csv)
     merged = baseline.merge(guided, on="image_path", suffixes=("_baseline", "_guided"))
@@ -59,6 +91,11 @@ def build_statistics_report(baseline_per_image_csv, guided_per_image_csv, output
     if {"eil_post_baseline", "eil_post_guided"}.issubset(merged.columns):
         eil = merged[["eil_post_baseline", "eil_post_guided"]].dropna()
         report["eil_post_wilcoxon"] = paired_wilcoxon(eil["eil_post_baseline"], eil["eil_post_guided"], "eil_post")
+    if {"eil_pre_baseline", "eil_pre_guided"}.issubset(merged.columns):
+        eil = merged[["eil_pre_baseline", "eil_pre_guided"]].dropna()
+        report["eil_pre_wilcoxon"] = paired_wilcoxon(eil["eil_pre_baseline"], eil["eil_pre_guided"], "eil_pre")
+
+    _add_counterfactual_statistics(report, baseline_counterfactual_csv, guided_counterfactual_csv)
 
     output_json = Path(output_json)
     output_json.parent.mkdir(parents=True, exist_ok=True)

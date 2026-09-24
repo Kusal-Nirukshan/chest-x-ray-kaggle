@@ -269,26 +269,40 @@ def select_guided_candidate(selection_df: pd.DataFrame, output_json=None) -> Dic
     """Conservative validation-only selection.
 
     Returns no clear winner unless at least one candidate has non-degraded
-    macro-F1 and improves zero-background stability relative to the table's
-    median candidate. This avoids forcing a winner from noisy validation data.
+    macro-F1 versus the validation baseline and improves zero-background
+    stability over that baseline. This avoids selecting the least-bad guided
+    candidate when every guided candidate is worse than vanilla.
     """
     if selection_df.empty:
         result = {"selected": False, "reason": "no candidates", "selection_rule_version": "v1"}
     else:
         df = selection_df.copy()
-        f1_floor = df["val_macro_f1"].max() - 0.01
+        if "version" not in df:
+            df["version"] = "guided"
+        baseline = df[df["version"] == "baseline"]
+        guided = df[df["version"] != "baseline"]
+        if baseline.empty:
+            result = {"selected": False, "reason": "missing validation baseline", "selection_rule_version": "v2"}
+            if output_json is not None:
+                output_json = Path(output_json)
+                output_json.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_json, "w", encoding="utf-8") as f:
+                    json.dump(result, f, indent=2)
+            return result
+
+        baseline_row = baseline.iloc[0]
+        f1_floor = baseline_row["val_macro_f1"] - 0.01
         stability_col = "val_cf_zero_stability"
-        if stability_col in df:
-            robust_floor = df[stability_col].median(skipna=True)
-            candidates = df[(df["val_macro_f1"] >= f1_floor) & (df[stability_col] >= robust_floor)]
+        if stability_col in guided and pd.notna(baseline_row.get(stability_col)):
+            candidates = guided[(guided["val_macro_f1"] >= f1_floor) & (guided[stability_col] > baseline_row[stability_col])]
         else:
-            candidates = df[df["val_macro_f1"] >= f1_floor]
+            candidates = guided[guided["val_macro_f1"] >= f1_floor]
         if candidates.empty:
-            result = {"selected": False, "reason": "no clear winner", "selection_rule_version": "v1"}
+            result = {"selected": False, "reason": "no clear winner versus validation baseline", "selection_rule_version": "v2"}
         else:
-            sort_cols = [c for c in [stability_col, "val_attention_dice", "val_macro_f1"] if c in candidates]
+            sort_cols = [c for c in [stability_col, "val_eil_post", "val_attention_dice", "val_macro_f1"] if c in candidates]
             best = candidates.sort_values(sort_cols, ascending=False).iloc[0].to_dict()
-            result = {"selected": True, "selection_rule_version": "v1", **best}
+            result = {"selected": True, "selection_rule_version": "v2", **best}
     if output_json is not None:
         output_json = Path(output_json)
         output_json.parent.mkdir(parents=True, exist_ok=True)
