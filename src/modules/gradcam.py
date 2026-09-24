@@ -4,7 +4,7 @@ Computes the module-agnostic Energy-Inside-Lung (EIL) metric at two taps:
 
 - post-gate (``model.post_attn``): "where does the deployed model's
   evidence actually live?" -- the headline number.
-- pre-gate (``model.backbone.features.norm5``): answers H3 -- "did the
+- pre-gate (the final backbone feature module): answers H3 -- "did the
   backbone's own representation change, or did the module just multiply a
   lung-shaped map onto unchanged features?" For arm A0 (no gate at all)
   both taps are the same layer, so EIL_post == EIL_pre there -- a useful
@@ -89,9 +89,22 @@ def get_taps(model: nn.Module):
     """Returns (tap_post, tap_pre) target-layer modules for cam_for().
 
     tap_post: model.post_attn (after the gate -- headline EIL_post).
-    tap_pre:  model.backbone.features.norm5 (before the gate -- EIL_pre, H3 check).
-    Only valid for DenseNet-family backbones; a ResNet50 build (T23) needs
-    its own pre-gate tap (e.g. backbone.layer4[-1]) since ResNet has no
-    features.norm5.
+    tap_pre:  the final backbone feature module before the attention gate
+              (EIL_pre, H3 check).
     """
-    return model.post_attn, model.backbone.features.norm5
+    backbone = model.backbone
+    backbone_name = getattr(model, "backbone_name", backbone.__class__.__name__).lower()
+
+    if backbone_name.startswith("densenet"):
+        tap_pre = backbone.features.norm5
+    elif backbone_name.startswith("efficientnet"):
+        tap_pre = backbone.bn2
+    elif backbone_name.startswith("resnet"):
+        tap_pre = backbone.layer4[-1]
+    else:
+        raise ValueError(
+            f"No Grad-CAM pre-gate tap registered for backbone '{backbone_name}'. "
+            "Add the final feature-producing module for this architecture."
+        )
+
+    return model.post_attn, tap_pre

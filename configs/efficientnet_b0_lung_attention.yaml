@@ -1,0 +1,73 @@
+# T25 -- Lung-Region Attention Module on EfficientNet-B0.
+#
+# Copied from baseline.yaml per configs/README.md and adapted to the same
+# A0-A5 ablation contract used by T18. This file represents arm A2 by default;
+# scripts/kaggle_t25_efficientnet_b0_lung_attention.py derives the other arms
+# by overriding module.use_attention / gate_mode / lambda_att / attention.
+#
+# Do NOT put API keys, tokens, or credentials in this file.
+
+experiment:
+  name: T25_efficientnet_b0_lung_attention
+  seed: 42
+
+model:
+  name: efficientnet_b0
+  pretrained: true
+  num_classes: 4
+  # T16's committed selected_config.json does not record a dropout override.
+  # Keep timm's default head dropout unless the original Kaggle notebook proves
+  # a different value was used, then update this before running A0-A5.
+  drop_rate: 0.0
+
+module:
+  name: lung_region_attention
+  attention: lung
+  use_attention: true
+  # Verified at runtime by the Kaggle runner via timm.create_model(...).num_features.
+  # EfficientNet-B0 is expected to be 1280 for timm's standard implementation.
+  in_channels: 1280
+  # T25-specific cost control: reduction=8 exceeds the <=3% parameter target.
+  reduction: 16
+  gate_mode: residual
+  target_mode: soft
+  lambda_att: 1.0
+  lambda_bg: 0.0
+
+dataset:
+  name: covid19_radiography
+  version: v1
+  image_size: 224
+  split_version: v1
+  use_masks: true
+
+training:
+  # Adopt T16's EfficientNet-B0 selected optimizer settings:
+  # artifacts/efficientnet_b0/runs/T16_efficientnet_b0/selected_config.json
+  phase1_epochs: 15
+  phase1_lr: 0.0003
+  phase2_epochs: 40
+  phase2_lr: 0.00003
+  unfreeze_blocks: 1
+  batch_size: 32
+  optimizer: adamw
+  weight_decay: 0.001
+  patience: 5
+
+scheduler:
+  name: cosine
+
+augmentation:
+  version: joint_v1
+
+tracking:
+  provider: wandb
+  project: chest-xray-disease-classification
+  entity: null
+  # The Kaggle runner defaults to no W&B calls. Set --wandb to enable.
+  mode: disabled
+
+checkpoint:
+  monitor: val_loss
+  mode: min
+  dir: artifacts/T25_efficientnet_b0_lung_attention/runs
